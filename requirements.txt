@@ -1,0 +1,99 @@
+# Core libraries
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+
+# Machine Learning and AI
+scikit-learn
+tensorflow
+torch
+transformers
+TTS #unmark if you have alot of bandwith
+
+# Web Development
+flask
+django
+requests
+beautifulsoup4
+
+# Data Processing and Analysis
+jupyter
+ipython
+openpyxl
+xlrd
+
+# Image Processing
+pillow
+opencv-python
+
+# Audio Processing
+librosa
+pydub
+soundfile
+
+# Natural Language Processing
+nltk
+spacy
+
+# Visualization
+plotly
+bokeh
+
+# Database
+sqlalchemy
+psycopg2-binary
+
+# API Development
+fastapi
+uvicorn
+
+# Testing
+pytest
+unittest2
+
+# GUI Development
+PyQt6
+tk
+
+# Miscellaneous Utilities
+tqdm
+python-dotenv
+pyyaml
+
+# Version Control
+gitpython
+
+# Documentation
+sphinx
+
+# Formatting and Linting
+black
+flake8
+isort
+
+# Deployment
+gunicorn
+docker
+
+# Async Programming
+asyncio
+aiohttp
+
+# Scraping
+scrapy
+
+# Cryptography
+cryptography
+
+# Date and Time handling
+pytz
+python-dateutil
+
+# File Formats
+pdfminer.six
+python-docx
+
+# Networking
+paramiko
