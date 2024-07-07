@@ -107,7 +107,7 @@ class VoiceToTextApp:
         voice = self.voice_option.get()
         words_per_minute = int(self.rate_scale.get())
         speed = 'slow' if words_per_minute <= 175 else 'fast'
-        
+
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -117,7 +117,7 @@ class VoiceToTextApp:
                 self.root.after(0, lambda: self.update_progress(5))
 
                 tts = gTTS(text=text, lang=voice, slow=(speed == 'slow'))
-                
+
                 if self.cancel_flag.is_set():
                     return None
 
