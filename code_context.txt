@@ -1,0 +1,609 @@
+// File: offline/requirements.txt
+# Core libraries
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+
+# Machine Learning and AI
+scikit-learn
+tensorflow
+torch
+transformers
+TTS #unmark if you have alot of bandwith
+
+# Web Development
+flask
+django
+requests
+beautifulsoup4
+
+# Data Processing and Analysis
+jupyter
+ipython
+openpyxl
+xlrd
+
+# Image Processing
+pillow
+opencv-python
+
+# Audio Processing
+librosa
+pydub
+soundfile
+
+# Natural Language Processing
+nltk
+spacy
+
+# Visualization
+plotly
+bokeh
+
+# Database
+sqlalchemy
+psycopg2-binary
+
+# API Development
+fastapi
+uvicorn
+
+# Testing
+pytest
+unittest2
+
+# GUI Development
+PyQt6
+tk
+
+# Miscellaneous Utilities
+tqdm
+python-dotenv
+pyyaml
+
+# Version Control
+gitpython
+
+# Documentation
+sphinx
+
+# Formatting and Linting
+black
+flake8
+isort
+
+# Deployment
+gunicorn
+docker
+
+# Async Programming
+asyncio
+aiohttp
+
+# Scraping
+scrapy
+
+# Cryptography
+cryptography
+
+# Date and Time handling
+pytz
+python-dateutil
+
+# File Formats
+pdfminer.six
+python-docx
+
+# Networking
+paramiko
+
+
+
+// File: offline/text_to_speech.py
+import sys
+from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, 
+                             QPushButton, QLabel, QMessageBox, QComboBox, QHBoxLayout, QFileDialog, QProgressBar)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMutex, QWaitCondition
+from TTS.api import TTS
+from pydub import AudioSegment
+from pydub.playback import play
+import re
+import os
+
+class ModelDownloader(QThread):
+    progress = pyqtSignal(int)
+    completed = pyqtSignal(bool, str)
+
+    def __init__(self, model_name):
+        super().__init__()
+        self.model_name = model_name
+        self._is_paused = False
+        self._is_canceled = False
+        self.mutex = QMutex()
+        self.wait_condition = QWaitCondition()
+
+    def run(self):
+        try:
+            # Trigger model download
+            TTS(model_name=self.model_name, progress_callback=self._progress_callback)
+            self.completed.emit(True, "")
+        except Exception as e:
+            self.completed.emit(False, str(e))
+
+    def _progress_callback(self, downloaded, total_size):
+        with self.mutex:
+            if self._is_canceled:
+                self.completed.emit(False, "Download canceled")
+                return
+
+            while self._is_paused:
+                self.wait_condition.wait(self.mutex)
+
+        progress_percentage = int((downloaded / total_size) * 100)
+        self.progress.emit(progress_percentage)
+
+    def pause(self):
+        with self.mutex:
+            self._is_paused = True
+
+    def resume(self):
+        with self.mutex:
+            self._is_paused = False
+            self.wait_condition.wakeAll()
+
+    def cancel(self):
+        with self.mutex:
+            self._is_canceled = True
+            self.wait_condition.wakeAll()
+
+class TTSApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.progress = 0  # Initialize the progress attribute
+        self.models = self.get_available_models()
+        self.current_model = None
+        self.model_downloads = {model: False for model in self.models.values()}
+        self.initUI()
+
+    def get_available_models(self):
+        available_models = {}
+        
+        tts_instance = TTS()
+        model_manager = tts_instance.list_models()
+        model_names = model_manager.list_models()
+        
+        for model_name in model_names:
+            parts = model_name.split('/')
+            if len(parts) >= 3:
+                language = parts[1]
+                details = parts[2].split('_')
+                
+                gender = "Unknown"
+                age = "Adult"
+                
+                if "male" in details:
+                    gender = "Male"
+                elif "female" in details:
+                    gender = "Female"
+                
+                if "child" in details:
+                    age = "Child"
+                elif "senior" in details or "elder" in details:
+                    age = "Senior"
+                
+                key = f"{age} {gender} ({language.capitalize()})"
+                available_models[key] = model_name
+        
+        return available_models
+
+    def initUI(self):
+        layout = QVBoxLayout()
+
+        model_layout = QHBoxLayout()
+        self.modelCombo = QComboBox()
+        self.modelCombo.addItems(self.models.keys())
+        self.modelCombo.currentIndexChanged.connect(self.onModelChange)
+        model_layout.addWidget(QLabel("Select Voice:"))
+        model_layout.addWidget(self.modelCombo)
+        layout.addLayout(model_layout)
+
+        self.downloadButton = QPushButton('Download')
+        self.downloadButton.clicked.connect(self.downloadModel)
+        model_layout.addWidget(self.downloadButton)
+
+        self.pauseButton = QPushButton('Pause')
+        self.pauseButton.setVisible(False)
+        self.pauseButton.clicked.connect(self.pauseDownload)
+        model_layout.addWidget(self.pauseButton)
+
+        self.resumeButton = QPushButton('Resume')
+        self.resumeButton.setVisible(False)
+        self.resumeButton.clicked.connect(self.resumeDownload)
+        model_layout.addWidget(self.resumeButton)
+
+        self.cancelButton = QPushButton('Cancel')
+        self.cancelButton.setVisible(False)
+        self.cancelButton.clicked.connect(self.cancelDownload)
+        model_layout.addWidget(self.cancelButton)
+
+        self.previewButton = QPushButton('Preview Voice')
+        self.previewButton.clicked.connect(self.previewModel)
+        layout.addWidget(self.previewButton)
+
+        self.textEdit = QTextEdit()
+        layout.addWidget(self.textEdit)
+
+        self.playButton = QPushButton('Play')
+        layout.addWidget(self.playButton)
+        self.playButton.clicked.connect(self.playText)
+
+        self.saveButton = QPushButton('Save')
+        layout.addWidget(self.saveButton)
+        self.saveButton.clicked.connect(self.saveAudio)
+
+        self.progressBar = QProgressBar()
+        self.progressBar.setValue(0)
+        self.progressBar.setVisible(False)
+        layout.addWidget(self.progressBar)
+
+        self.statusLabel = QLabel()
+        layout.addWidget(self.statusLabel)
+
+        self.setLayout(layout)
+        self.setGeometry(300, 300, 400, 400)
+        self.setWindowTitle('TTS Application')
+
+    def onModelChange(self):
+        model_key = self.modelCombo.currentText()
+        model_name = self.models[model_key]
+        if self.model_downloads[model_name]:
+            self.downloadButton.setVisible(False)
+        else:
+            self.downloadButton.setVisible(True)
+        self.update()
+
+    def downloadModel(self):
+        model_key = self.modelCombo.currentText()
+        model_name = self.models[model_key]
+
+        self.downloadThread = ModelDownloader(model_name)
+        self.downloadThread.progress.connect(self.updateDownloadProgress)
+        self.downloadThread.completed.connect(self.onDownloadComplete)
+        self.downloadThread.start()
+
+        self.downloadButton.setVisible(False)
+        self.pauseButton.setVisible(True)
+        self.cancelButton.setVisible(True)
+        self.progressBar.setVisible(True)
+        self.statusLabel.setText("Downloading model...")
+
+    def updateDownloadProgress(self, value):
+        # Update the progress bar
+        self.progressBar.setValue(value)
+        self.update()
+
+    def onDownloadComplete(self, success, message):
+        self.pauseButton.setVisible(False)
+        self.resumeButton.setVisible(False)
+        self.cancelButton.setVisible(False)
+        self.progressBar.setVisible(False)
+        self.downloadButton.setVisible(False)
+
+        if success:
+            model_key = self.modelCombo.currentText()
+            model_name = self.models[model_key]
+            self.model_downloads[model_name] = True
+            self.statusLabel.setText("Model downloaded successfully.")
+        else:
+            self.statusLabel.setText(f"Download failed: {message}")
+        self.update()
+
+    def pauseDownload(self):
+        if hasattr(self, 'downloadThread'):
+            self.downloadThread.pause()
+            self.pauseButton.setVisible(False)
+            self.resumeButton.setVisible(True)
+            self.statusLabel.setText("Download paused.")
+            self.update()
+
+    def resumeDownload(self):
+        if hasattr(self, 'downloadThread'):
+            self.downloadThread.resume()
+            self.resumeButton.setVisible(False)
+            self.pauseButton.setVisible(True)
+            self.statusLabel.setText("Download resumed.")
+            self.update()
+
+    def cancelDownload(self):
+        if hasattr(self, 'downloadThread'):
+            self.downloadThread.cancel()
+            self.pauseButton.setVisible(False)
+            self.resumeButton.setVisible(False)
+            self.cancelButton.setVisible(False)
+            self.progressBar.setVisible(False)
+            self.downloadButton.setVisible(True)
+            self.statusLabel.setText("Download canceled.")
+            self.update()
+
+    def loadModel(self):
+        model_key = self.modelCombo.currentText()
+        model_name = self.models[model_key]
+        if self.current_model != model_name:
+            try:
+                self.current_model = model_name
+                self.tts = TTS(model_name=model_name)
+                self.showStatusMessage(f"Loaded model: {model_key}")
+            except Exception as e:
+                self.showErrorMessage("Model Loading Error", f"Failed to load model: {str(e)}")
+                self.current_model = None
+
+    def previewModel(self):
+        self.loadModel()
+        if self.current_model:
+            preview_text = "This is a preview of the selected voice."
+            self.ttsToAudio(preview_text)
+
+    def ttsToAudio(self, text):
+        try:
+            output_file = "output.wav"
+            self.tts.tts_to_file(text=text, file_path=output_file)
+            audio = AudioSegment.from_file(output_file)
+            play(audio)
+        except Exception as e:
+            self.showErrorMessage("Error", f"An error occurred: {str(e)}")
+
+    def playText(self):
+        self.loadModel()
+        if self.current_model:
+            text = self.textEdit.toPlainText().strip()
+            if not text:
+                self.showErrorMessage("Error", "Please enter some text to play.")
+                return
+            self.ttsToAudio(text)
+
+    def saveAudio(self):
+        self.loadModel()
+        if self.current_model:
+            text = self.textEdit.toPlainText().strip()
+            if not text:
+                self.showErrorMessage("Error", "Please enter some text to save.")
+                return
+            
+            try:
+                save_path, _ = QFileDialog.getSaveFileName(self, "Save Audio", "", "Audio Files (*.wav)")
+                if save_path:
+                    self.tts.tts_to_file(text=text, file_path=save_path)
+                    self.showStatusMessage(f"Audio saved successfully to {save_path}")
+            except Exception as e:
+                self.showErrorMessage("Error", f"An error occurred: {str(e)}")
+
+    def showErrorMessage(self, title, message):
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.exec()
+
+    def showStatusMessage(self, message):
+        self.statusLabel.setText(message)
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    try:
+        ex = TTSApp()
+        ex.show()
+        sys.exit(app.exec())
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+
+
+// File: online/voice_to_text_app.py
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from gtts import gTTS
+from playsound import playsound
+import os
+import tempfile
+import time
+import threading
+
+class VoiceToTextApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Story Voicalizer")
+
+        # Text input
+        self.text_label = tk.Label(root, text="Enter your story:")
+        self.text_label.pack(pady=10)
+        self.text_entry = tk.Text(root, wrap='word', height=10, width=50)
+        self.text_entry.pack(pady=10)
+
+        # Enable standard shortcuts
+        self.text_entry.bind("<Control-a>", self.select_all)
+        self.text_entry.bind("<Control-c>", self.copy)
+        self.text_entry.bind("<Control-x>", self.cut)
+        self.text_entry.bind("<Control-v>", self.paste)
+
+        # Voice selection
+        self.voice_label = tk.Label(root, text="Select voice:")
+        self.voice_label.pack(pady=10)
+        self.voice_option = ttk.Combobox(root, values=["en", "en-au", "en-uk", "en-us"])
+        self.voice_option.set("en")
+        self.voice_option.pack(pady=10)
+
+        # Speech rate slider
+        self.rate_label = tk.Label(root, text="Speech rate (words per minute):")
+        self.rate_label.pack(pady=5)
+        self.rate_scale = ttk.Scale(root, from_=100, to=250, orient='horizontal', length=200)
+        self.rate_scale.set(175)  # Default value
+        self.rate_scale.pack(pady=5)
+        self.rate_value_label = tk.Label(root, text="175 WPM")
+        self.rate_value_label.pack(pady=5)
+        self.rate_scale.configure(command=self.update_rate_label)
+
+        # File name input
+        self.file_name_label = tk.Label(root, text="Enter file name (without extension):")
+        self.file_name_label.pack(pady=10)
+        self.file_name_entry = tk.Entry(root, width=30)
+        self.file_name_entry.pack(pady=10)
+
+        # Convert and play button
+        self.convert_play_button = tk.Button(root, text="Play", command=self.convert_and_play_threaded)
+        self.convert_play_button.pack(pady=10)
+
+        # Convert and save button
+        self.convert_save_button = tk.Button(root, text="Convert and Save", command=self.convert_and_save_threaded)
+        self.convert_save_button.pack(pady=10)
+
+        # Progress bar
+        self.progress_var = tk.DoubleVar()
+        self.progress = ttk.Progressbar(root, orient="horizontal", length=200, mode="determinate", variable=self.progress_var)
+        self.progress.pack(pady=10)
+        self.progress_label = tk.Label(root, text="0%")
+        self.progress_label.pack(pady=5)
+
+        # Add a cancel button
+        self.cancel_button = tk.Button(root, text="Cancel", command=self.cancel_operation, state=tk.DISABLED)
+        self.cancel_button.pack(pady=10)
+
+        self.current_thread = None
+        self.cancel_flag = threading.Event()
+
+    def select_all(self, event):
+        self.text_entry.tag_add(tk.SEL, "1.0", tk.END)
+        self.text_entry.mark_set(tk.INSERT, "1.0")
+        self.text_entry.see(tk.INSERT)
+        return 'break'
+
+    def copy(self, event):
+        if self.text_entry.tag_ranges(tk.SEL):
+            self.text_entry.event_generate("<<Copy>>")
+        return 'break'
+
+    def cut(self, event):
+        if self.text_entry.tag_ranges(tk.SEL):
+            self.text_entry.event_generate("<<Cut>>")
+        return 'break'
+
+    def paste(self, event):
+        self.text_entry.event_generate("<<Paste>>")
+        return 'break'
+
+    def update_rate_label(self, value):
+        wpm = int(float(value))
+        self.rate_value_label.config(text=f"{wpm} WPM")
+
+    def update_progress(self, progress):
+        self.progress_var.set(progress)
+        self.progress_label.config(text=f"{progress:.1f}%")
+        self.root.update_idletasks()
+
+    def convert_to_speech(self, save_path=None):
+        text = self.text_entry.get("1.0", tk.END).strip()
+        if not text:
+            self.root.after(0, lambda: messagebox.showerror("Error", "Please enter a story to convert."))
+            return None
+
+        voice = self.voice_option.get()
+        words_per_minute = int(self.rate_scale.get())
+        speed = 'slow' if words_per_minute <= 175 else 'fast'
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if self.cancel_flag.is_set():
+                    return None
+
+                self.root.after(0, lambda: self.update_progress(5))
+
+                tts = gTTS(text=text, lang=voice, slow=(speed == 'slow'))
+                
+                if self.cancel_flag.is_set():
+                    return None
+
+                self.root.after(0, lambda: self.update_progress(30))
+
+                if save_path:
+                    tts.save(save_path)
+                    self.root.after(0, lambda: self.update_progress(100))
+                    return save_path
+                else:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+                        temp_path = temp_file.name
+                    tts.save(temp_path)
+                    self.root.after(0, lambda: self.update_progress(100))
+                    return temp_path
+            except Exception as e:
+                if attempt < max_retries - 1 and not self.cancel_flag.is_set():
+                    time.sleep(1)
+                else:
+                    self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to convert text to speech after {max_retries} attempts. Error: {str(e)}"))
+                    return None
+
+    def convert_and_play_threaded(self):
+        self.start_operation()
+        self.current_thread = threading.Thread(target=self.convert_and_play, daemon=True)
+        self.current_thread.start()
+
+    def convert_and_play(self):
+        temp_file = self.convert_to_speech()
+        if temp_file and not self.cancel_flag.is_set():
+            try:
+                playsound(temp_file)
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to play audio. Error: {str(e)}"))
+            finally:
+                os.remove(temp_file)
+        self.end_operation()
+
+    def convert_and_save_threaded(self):
+        self.start_operation()
+        self.current_thread = threading.Thread(target=self.convert_and_save, daemon=True)
+        self.current_thread.start()
+
+    def convert_and_save(self):
+        file_name = self.file_name_entry.get().strip()
+        if not file_name:
+            self.root.after(0, lambda: messagebox.showerror("Error", "Please enter a file name."))
+            self.end_operation()
+            return
+
+        file_name += ".mp3"
+        save_path = filedialog.asksaveasfilename(defaultextension=".mp3",
+                                                 filetypes=[("MP3 files", "*.mp3")],
+                                                 initialfile=file_name)
+        if save_path and not self.cancel_flag.is_set():
+            saved_file = self.convert_to_speech(save_path)
+            if saved_file:
+                self.root.after(0, lambda: messagebox.showinfo("Success", f"File saved successfully as:\n{saved_file}"))
+        self.end_operation()
+
+    def start_operation(self):
+        self.progress_var.set(0)
+        self.cancel_flag.clear()
+        self.convert_play_button.config(state=tk.DISABLED)
+        self.convert_save_button.config(state=tk.DISABLED)
+        self.cancel_button.config(state=tk.NORMAL)
+
+    def end_operation(self):
+        self.convert_play_button.config(state=tk.NORMAL)
+        self.convert_save_button.config(state=tk.NORMAL)
+        self.cancel_button.config(state=tk.DISABLED)
+        self.progress_var.set(0)
+        self.progress_label.config(text="0%")
+
+    def cancel_operation(self):
+        self.cancel_flag.set()
+        if self.current_thread:
+            self.current_thread.join(timeout=1)
+        self.end_operation()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = VoiceToTextApp(root)
+    root.mainloop()
+
+
