@@ -1,12 +1,12 @@
-import sys
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, 
-                             QPushButton, QLabel, QMessageBox, QComboBox, QHBoxLayout, QFileDialog, QProgressBar)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMutex, QWaitCondition
+import os
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QPushButton, QLabel, 
+                             QMessageBox, QComboBox, QHBoxLayout, QFileDialog, QProgressBar)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from TTS.api import TTS
 from pydub import AudioSegment
 from pydub.playback import play
-import re
-import os
+from settings_manager import SettingsManager
+from settings_dialog import SettingsDialog
 
 class ModelDownloader(QThread):
     progress = pyqtSignal(int)
@@ -15,49 +15,19 @@ class ModelDownloader(QThread):
     def __init__(self, model_name):
         super().__init__()
         self.model_name = model_name
-        self._is_paused = False
-        self._is_canceled = False
-        self.mutex = QMutex()
-        self.wait_condition = QWaitCondition()
 
     def run(self):
         try:
-            # Trigger model download
             TTS(model_name=self.model_name)
             self.completed.emit(True, "")
         except Exception as e:
             self.completed.emit(False, str(e))
 
-    def _progress_callback(self, downloaded, total_size):
-        with self.mutex:
-            if self._is_canceled:
-                self.completed.emit(False, "Download canceled")
-                return
-
-            while self._is_paused:
-                self.wait_condition.wait(self.mutex)
-
-        progress_percentage = int((downloaded / total_size) * 100)
-        self.progress.emit(progress_percentage)
-
-    def pause(self):
-        with self.mutex:
-            self._is_paused = True
-
-    def resume(self):
-        with self.mutex:
-            self._is_paused = False
-            self.wait_condition.wakeAll()
-
-    def cancel(self):
-        with self.mutex:
-            self._is_canceled = True
-            self.wait_condition.wakeAll()
-
 class TTSApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.progress = 0  # Initialize the progress attribute
+        self.settings_manager = SettingsManager()
+        self.progress = 0
         self.models = self.get_available_models()
         self.current_model = None
         self.model_downloads = {model: False for model in self.models.values()}
@@ -65,7 +35,6 @@ class TTSApp(QWidget):
 
     def get_available_models(self):
         available_models = {}
-        
         tts_instance = TTS()
         model_manager = tts_instance.list_models()
         model_names = model_manager.list_models()
@@ -107,22 +76,7 @@ class TTSApp(QWidget):
 
         self.downloadButton = QPushButton('Download')
         self.downloadButton.clicked.connect(self.downloadModel)
-        model_layout.addWidget(self.downloadButton)
-
-        self.pauseButton = QPushButton('Pause')
-        self.pauseButton.setVisible(False)
-        self.pauseButton.clicked.connect(self.pauseDownload)
-        model_layout.addWidget(self.pauseButton)
-
-        self.resumeButton = QPushButton('Resume')
-        self.resumeButton.setVisible(False)
-        self.resumeButton.clicked.connect(self.resumeDownload)
-        model_layout.addWidget(self.resumeButton)
-
-        self.cancelButton = QPushButton('Cancel')
-        self.cancelButton.setVisible(False)
-        self.cancelButton.clicked.connect(self.cancelDownload)
-        model_layout.addWidget(self.cancelButton)
+        layout.addWidget(self.downloadButton)
 
         self.previewButton = QPushButton('Preview Voice')
         self.previewButton.clicked.connect(self.previewModel)
@@ -147,6 +101,10 @@ class TTSApp(QWidget):
         self.statusLabel = QLabel()
         layout.addWidget(self.statusLabel)
 
+        self.settings_button = QPushButton('Settings')
+        self.settings_button.clicked.connect(self.open_settings)
+        layout.addWidget(self.settings_button)
+
         self.setLayout(layout)
         self.setGeometry(300, 300, 400, 400)
         self.setWindowTitle('TTS Application')
@@ -170,20 +128,14 @@ class TTSApp(QWidget):
         self.downloadThread.start()
 
         self.downloadButton.setVisible(False)
-        self.pauseButton.setVisible(True)
-        self.cancelButton.setVisible(True)
         self.progressBar.setVisible(True)
         self.statusLabel.setText("Downloading model...")
 
     def updateDownloadProgress(self, value):
-        # Update the progress bar
         self.progressBar.setValue(value)
         self.update()
 
     def onDownloadComplete(self, success, message):
-        self.pauseButton.setVisible(False)
-        self.resumeButton.setVisible(False)
-        self.cancelButton.setVisible(False)
         self.progressBar.setVisible(False)
         self.downloadButton.setVisible(False)
 
@@ -196,47 +148,28 @@ class TTSApp(QWidget):
             self.statusLabel.setText(f"Download failed: {message}")
         self.update()
 
-    def pauseDownload(self):
-        if hasattr(self, 'downloadThread'):
-            self.downloadThread.pause()
-            self.pauseButton.setVisible(False)
-            self.resumeButton.setVisible(True)
-            self.statusLabel.setText("Download paused.")
-            self.update()
-
-    def resumeDownload(self):
-        if hasattr(self, 'downloadThread'):
-            self.downloadThread.resume()
-            self.resumeButton.setVisible(False)
-            self.pauseButton.setVisible(True)
-            self.statusLabel.setText("Download resumed.")
-            self.update()
-
-    def cancelDownload(self):
-        if hasattr(self, 'downloadThread'):
-            self.downloadThread.cancel()
-            self.pauseButton.setVisible(False)
-            self.resumeButton.setVisible(False)
-            self.cancelButton.setVisible(False)
-            self.progressBar.setVisible(False)
-            self.downloadButton.setVisible(True)
-            self.statusLabel.setText("Download canceled.")
-            self.update()
-
     def loadModel(self):
         model_key = self.modelCombo.currentText()
         model_name = self.models[model_key]
         if self.current_model != model_name:
             try:
                 self.current_model = model_name
-                self.tts = TTS(model_name=model_name)
+                model_path = self.find_model_path(model_name)
+                if model_path:
+                    self.tts = TTS(model_path=model_path)
+                else:
+                    self.tts = TTS(model_name=model_name)
                 self.showStatusMessage(f"Loaded model: {model_key}")
             except Exception as e:
-                print(f"Error initializing TTS: {str(e)}")
                 self.showErrorMessage("Model Loading Error", f"Failed to load model: {str(e)}")
                 self.current_model = None
-                import traceback
-                traceback.print_exc()
+
+    def find_model_path(self, model_name):
+        for path in self.settings_manager.get_model_paths():
+            potential_path = os.path.join(path, model_name)
+            if os.path.exists(potential_path):
+                return potential_path
+        return None
 
     def previewModel(self):
         self.loadModel()
@@ -288,11 +221,6 @@ class TTSApp(QWidget):
     def showStatusMessage(self, message):
         self.statusLabel.setText(message)
 
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    try:
-        ex = TTSApp()
-        ex.show()
-        sys.exit(app.exec())
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
+    def open_settings(self):
+        settings_dialog = SettingsDialog(self.settings_manager, self)
+        settings_dialog.exec()
