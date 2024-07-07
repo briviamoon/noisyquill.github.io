@@ -1,38 +1,45 @@
-import sys
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QTextEdit, 
-                            QPushButton, QLabel, QMessageBox, QComboBox, QHBoxLayout, QProgressDialog)
-from PyQt6.QtCore import Qt
+import os
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QPushButton, QLabel, 
+                             QMessageBox, QComboBox, QHBoxLayout, QFileDialog, QProgressBar)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from TTS.api import TTS
 from pydub import AudioSegment
 from pydub.playback import play
-import re
+from settings_manager import SettingsManager
+from settings_dialog import SettingsDialog
+
+class ModelDownloader(QThread):
+    progress = pyqtSignal(int)
+    completed = pyqtSignal(bool, str)
+
+    def __init__(self, model_name):
+        super().__init__()
+        self.model_name = model_name
+
+    def run(self):
+        try:
+            TTS(model_name=self.model_name)
+            self.completed.emit(True, "")
+        except Exception as e:
+            self.completed.emit(False, str(e))
 
 class TTSApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.progress = QProgressDialog("Loading models...", "Cancel", 0, 100, self)
-        self.progress.setWindowModality(Qt.WindowModality.WindowModal)
-        self.progress.setAutoClose(True)
-        self.progress.setAutoReset(True)
+        self.settings_manager = SettingsManager()
+        self.progress = 0
         self.models = self.get_available_models()
         self.current_model = None
+        self.model_downloads = {model: False for model in self.models.values()}
         self.initUI()
 
     def get_available_models(self):
         available_models = {}
-        
         tts_instance = TTS()
         model_manager = tts_instance.list_models()
         model_names = model_manager.list_models()
         
-        self.progress.setMaximum(len(model_names))
-        for i, model_name in enumerate(model_names):
-            self.progress.setValue(i)
-            if self.progress.wasCanceled():
-                break
-            
-            self.ensureModelDownloaded(model_name)
-            
+        for model_name in model_names:
             parts = model_name.split('/')
             if len(parts) >= 3:
                 language = parts[1]
@@ -54,14 +61,7 @@ class TTSApp(QWidget):
                 key = f"{age} {gender} ({language.capitalize()})"
                 available_models[key] = model_name
         
-        self.progress.setValue(len(model_names))
         return available_models
-
-    def ensureModelDownloaded(self, model_name):
-        try:
-            TTS(model_name=model_name)
-        except Exception as e:
-            self.showErrorMessage("Model Download Error", f"Failed to download model: {str(e)}")
 
     def initUI(self):
         layout = QVBoxLayout()
@@ -69,9 +69,14 @@ class TTSApp(QWidget):
         model_layout = QHBoxLayout()
         self.modelCombo = QComboBox()
         self.modelCombo.addItems(self.models.keys())
+        self.modelCombo.currentIndexChanged.connect(self.onModelChange)
         model_layout.addWidget(QLabel("Select Voice:"))
         model_layout.addWidget(self.modelCombo)
         layout.addLayout(model_layout)
+
+        self.downloadButton = QPushButton('Download')
+        self.downloadButton.clicked.connect(self.downloadModel)
+        layout.addWidget(self.downloadButton)
 
         self.previewButton = QPushButton('Preview Voice')
         self.previewButton.clicked.connect(self.previewModel)
@@ -88,12 +93,60 @@ class TTSApp(QWidget):
         layout.addWidget(self.saveButton)
         self.saveButton.clicked.connect(self.saveAudio)
 
+        self.progressBar = QProgressBar()
+        self.progressBar.setValue(0)
+        self.progressBar.setVisible(False)
+        layout.addWidget(self.progressBar)
+
         self.statusLabel = QLabel()
         layout.addWidget(self.statusLabel)
+
+        self.settings_button = QPushButton('Settings')
+        self.settings_button.clicked.connect(self.open_settings)
+        layout.addWidget(self.settings_button)
 
         self.setLayout(layout)
         self.setGeometry(300, 300, 400, 400)
         self.setWindowTitle('TTS Application')
+
+    def onModelChange(self):
+        model_key = self.modelCombo.currentText()
+        model_name = self.models[model_key]
+        if self.model_downloads[model_name]:
+            self.downloadButton.setVisible(False)
+        else:
+            self.downloadButton.setVisible(True)
+        self.update()
+
+    def downloadModel(self):
+        model_key = self.modelCombo.currentText()
+        model_name = self.models[model_key]
+
+        self.downloadThread = ModelDownloader(model_name)
+        self.downloadThread.progress.connect(self.updateDownloadProgress)
+        self.downloadThread.completed.connect(self.onDownloadComplete)
+        self.downloadThread.start()
+
+        self.downloadButton.setVisible(False)
+        self.progressBar.setVisible(True)
+        self.statusLabel.setText("Downloading model...")
+
+    def updateDownloadProgress(self, value):
+        self.progressBar.setValue(value)
+        self.update()
+
+    def onDownloadComplete(self, success, message):
+        self.progressBar.setVisible(False)
+        self.downloadButton.setVisible(False)
+
+        if success:
+            model_key = self.modelCombo.currentText()
+            model_name = self.models[model_key]
+            self.model_downloads[model_name] = True
+            self.statusLabel.setText("Model downloaded successfully.")
+        else:
+            self.statusLabel.setText(f"Download failed: {message}")
+        self.update()
 
     def loadModel(self):
         model_key = self.modelCombo.currentText()
@@ -101,11 +154,22 @@ class TTSApp(QWidget):
         if self.current_model != model_name:
             try:
                 self.current_model = model_name
-                self.tts = TTS(model_name=model_name)
+                model_path = self.find_model_path(model_name)
+                if model_path:
+                    self.tts = TTS(model_path=model_path)
+                else:
+                    self.tts = TTS(model_name=model_name)
                 self.showStatusMessage(f"Loaded model: {model_key}")
             except Exception as e:
                 self.showErrorMessage("Model Loading Error", f"Failed to load model: {str(e)}")
                 self.current_model = None
+
+    def find_model_path(self, model_name):
+        for path in self.settings_manager.get_model_paths():
+            potential_path = os.path.join(path, model_name)
+            if os.path.exists(potential_path):
+                return potential_path
+        return None
 
     def previewModel(self):
         self.loadModel()
@@ -140,13 +204,12 @@ class TTSApp(QWidget):
                 return
             
             try:
-                from PyQt6.QtWidgets import QFileDialog
                 save_path, _ = QFileDialog.getSaveFileName(self, "Save Audio", "", "Audio Files (*.wav)")
                 if save_path:
                     self.tts.tts_to_file(text=text, file_path=save_path)
                     self.showStatusMessage(f"Audio saved successfully to {save_path}")
             except Exception as e:
-                self.showErrorMessage("Error", f"An error occurred during saving: {str(e)}")
+                self.showErrorMessage("Error", f"An error occurred: {str(e)}")
 
     def showErrorMessage(self, title, message):
         msg_box = QMessageBox()
@@ -158,11 +221,6 @@ class TTSApp(QWidget):
     def showStatusMessage(self, message):
         self.statusLabel.setText(message)
 
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    try:
-        ex = TTSApp()
-        ex.show()
-        sys.exit(app.exec())
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
+    def open_settings(self):
+        settings_dialog = SettingsDialog(self.settings_manager, self)
+        settings_dialog.exec()

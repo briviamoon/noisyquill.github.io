@@ -1,0 +1,51 @@
+juggernut@juggernut:~/Desktop/Python-Projects/text-to-speech_app/offline$  /usr/bin/env /bin/python3.9 /home/juggernut/.vscode/extensions/ms-python.debugpy-2024.6.0-linux-x64/bundled/libs/debugpy/adapter/../../debugpy/launcher 45517 -- /home/juggernut/Desktop/Python-Projects/text-to-speech_app/offline/text_to_speech.py 
+ > voice_conversion_models/multilingual/vctk/freevc24 is already downloaded.
+ > voice_conversion_models/multilingual/vctk/freevc24 is already downloaded.
+Error initializing TTS:  [!] Model file not found in the output path
+Traceback (most recent call last):
+  File "/home/juggernut/Desktop/Python-Projects/text-to-speech_app/offline/text_to_speech.py", line 232, in loadModel
+    self.tts = TTS(model_name=model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 76, in __init__
+    self.load_vc_model_by_name(model_name, gpu)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 156, in load_vc_model_by_name
+    model_path, config_path, _, _, _ = self.download_model_by_name(model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 129, in download_model_by_name
+    model_path, config_path, model_item = self.manager.download_model(model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/utils/manage.py", line 419, in download_model
+    output_model_path, output_config_path = self._find_files(output_path)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/utils/manage.py", line 442, in _find_files
+    raise ValueError(" [!] Model file not found in the output path")
+ValueError:  [!] Model file not found in the output path
+ > voice_conversion_models/multilingual/vctk/freevc24 is already downloaded.
+Error initializing TTS:  [!] Model file not found in the output path
+Traceback (most recent call last):
+  File "/home/juggernut/Desktop/Python-Projects/text-to-speech_app/offline/text_to_speech.py", line 232, in loadModel
+    self.tts = TTS(model_name=model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 76, in __init__
+    self.load_vc_model_by_name(model_name, gpu)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 156, in load_vc_model_by_name
+    model_path, config_path, _, _, _ = self.download_model_by_name(model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 129, in download_model_by_name
+    model_path, config_path, model_item = self.manager.download_model(model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/utils/manage.py", line 419, in download_model
+    output_model_path, output_config_path = self._find_files(output_path)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/utils/manage.py", line 442, in _find_files
+    raise ValueError(" [!] Model file not found in the output path")
+ValueError:  [!] Model file not found in the output path
+ > voice_conversion_models/multilingual/vctk/freevc24 is already downloaded.
+Error initializing TTS:  [!] Model file not found in the output path
+Traceback (most recent call last):
+  File "/home/juggernut/Desktop/Python-Projects/text-to-speech_app/offline/text_to_speech.py", line 232, in loadModel
+    self.tts = TTS(model_name=model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 76, in __init__
+    self.load_vc_model_by_name(model_name, gpu)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 156, in load_vc_model_by_name
+    model_path, config_path, _, _, _ = self.download_model_by_name(model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/api.py", line 129, in download_model_by_name
+    model_path, config_path, model_item = self.manager.download_model(model_name)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/utils/manage.py", line 419, in download_model
+    output_model_path, output_config_path = self._find_files(output_path)
+  File "/home/juggernut/.local/lib/python3.9/site-packages/TTS/utils/manage.py", line 442, in _find_files
+    raise ValueError(" [!] Model file not found in the output path")
+ValueError:  [!] Model file not found in the output path
+juggernut@juggernut:~/Desktop/Python-Projects/text-to-speech_app/offline$ 
