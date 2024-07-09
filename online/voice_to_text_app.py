@@ -1,3 +1,4 @@
+import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from gtts import gTTS
@@ -6,6 +7,40 @@ import os
 import tempfile
 import time
 import threading
+import traceback
+
+# dls and libraries
+python_dir = os.path.join(os.path.dirname(sys.executable), '_internal')
+sys.path.append(python_dir)
+
+# set env var
+os.environ['PYTHONHOME'] = python_dir
+os.environ['PYTHONPATH'] = python_dir
+
+def log_environment():
+    with open("environment_log.txt", "w") as f:
+        f.write(f"Python version: {sys.version}\n")
+        f.write(f"Executable: {sys.executable}\n")
+        f.write(f"sys.path: {sys.path}\n")
+        f.write(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'Not set')}\n")
+        f.write(f"PYTHONHOME: {os.environ.get('PYTHONHOME', 'Not set')}\n")
+        f.write("Current working directory: " + os.getcwd() + "\n")
+        f.write("Contents of current directory:\n")
+        for item in os.listdir():
+            f.write(f"  {item}\n")
+
+try:
+    # initializing interpreter
+    log_environment()
+    import site # to add other needed modules
+except Exception as e:
+    error_message = f"Opps!! Failed to start embedded Python interpreter: {e}\n"
+    error_message += f"Python executable: {sys.executable}\n"
+    error_message += f"Python path: {sys.path}\n"
+    error_message += f"Traceback:\n{traceback.format_exc()}"
+    print(error_message)
+    with open("error_log.txt", "w") as f:
+        f.write(error_message)
 
 class VoiceToTextApp:
     def __init__(self, root):
