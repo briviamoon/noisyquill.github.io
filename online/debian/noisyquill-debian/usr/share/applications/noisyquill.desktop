@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=NoisyQuill
+Comment=A simple story vocalizer application
+Exec=noisyquill
+Icon=feather_quill
+Terminal=false
+Type=Application
+Categories=Utility;AudioVideo;

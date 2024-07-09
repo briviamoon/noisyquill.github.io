@@ -1,0 +1,32 @@
+name: noisy-quill
+version: '1.0.0'
+summary: A simple story vocalizer application
+description: |
+  NoisyQuill is a simple application that converts text stories to speech using Google Text-to-Speech (gTTS) and plays them.
+  You will need python3.9, and the following edpendencies: gtts, playsound, tk. use pip install {dependency}
+base: core22
+
+
+confinement: strict
+grade: stable
+
+apps:
+  noisyquill:
+    command: NoisyQuill
+    desktop: noisyquill.desktop
+
+parts:
+  noisyquill:
+    plugin: python
+    source: .
+    stage-packages:
+      - python3
+      - python3-gtts
+      - python3-tk
+#      - playsound
+    build-packages:
+      - python3-pip
+    override-pull: |
+      snapcraftctl pull
+      sudo apt install python3.9-full
+      pip install gtts playsound
